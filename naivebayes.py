@@ -2,6 +2,7 @@ import random
 import math
 import copy
 import nltk
+from nltk.tag.simplify import simplify_wsj_tag
 
 def document_features(document):
     document_words = set(document)
@@ -12,11 +13,16 @@ def document_features(document):
 
 def stem(word):
     #for suffix in ['ed', 'ies', 'y', 'es', 's']:
-    #    if word.endswith(suffix):
-     #       word=word[:-len(suffix)]
+    # if word.endswith(suffix):
+     # word=word[:-len(suffix)]
     l=word.split("'")
     return l[0]
-    
+
+def ok(word):
+    if word == '.' or word == ',' or word == ':' or word == 'CNJ' or word == 'DET' or word == 'EX' or word == 'NUM' or word == 'P' or word == 'TO' or word == 'WH':
+        return 0
+    return 1
+
 f=open("obj.txt")
 obj=[]
 for i in range(5000):
@@ -43,10 +49,18 @@ all=obj[:][:] + subj[:][:]
 for i in range(10000):
     for j in range(len(all[i])):
         all_words.append(all[i][j])
-all_words = [word for word in all_words if (word!='.' and word!=',' and word!=')' and word!='(' and word!='a' and word!='is' and word!='the' and word!='and')]
+#all_words = [word for word in all_words if (word!='.' and word!=',' and word!=')' and word!='(' and word!='a' and word!='is' and word!='the' and word!='and')]
 #all_words = [stem(word) for word in all_words]
 all_words = nltk.FreqDist(all_words)
-word_features = all_words.keys()[:2000]
+
+#ovo je dodano za otklanjanje nepozeljnih rijeci
+tagged_sent = nltk.pos_tag(all_words.keys()[:10000])
+simplified = [(word, simplify_wsj_tag(tag)) for word, tag in tagged_sent]
+useful_words = [t[0] for t in simplified if t[0] != '"' and (ok(t[1]) or t[0] == '--')]
+print useful_words[:50]
+print len(useful_words)
+#word_features = all_words.keys()[:2000]
+word_features = useful_words[:2000]
 
 featuresets = [(document_features(d), c) for (d,c) in documents]
 train_set, devtest_set, test_set = featuresets[:4000], featuresets[4000:7000], featuresets[7000:]
@@ -55,12 +69,11 @@ print nltk.classify.accuracy(classifier, devtest_set)
 
 errors = []
 ##for (df, tag) in devtest_set:
-##    guess = classifier.classify(df)
-##    if guess != tag:
-##        errors.append( (tag, guess, df) )
+## guess = classifier.classify(df)
+## if guess != tag:
+## errors.append( (tag, guess, df) )
 ##for (tag, guess, df) in sorted(errors): # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
-##    lista=[key for key in df.keys() if df[key]==True]
-##    print 'correct=%-8s guess=%-8s features=%-30s' %(tag, guess, lista)
+## lista=[key for key in df.keys() if df[key]==True]
+## print 'correct=%-8s guess=%-8s features=%-30s' %(tag, guess, lista)
 classifier.show_most_informative_features(20)
-
 
