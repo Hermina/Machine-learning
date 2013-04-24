@@ -61,6 +61,6 @@ errors = []
 ##for (tag, guess, df) in sorted(errors): # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
 ##    lista=[key for key in df.keys() if df[key]==True]
 ##    print 'correct=%-8s guess=%-8s features=%-30s' %(tag, guess, lista)
-classifier.show_most_informative_features(20)
+#classifier.show_most_informative_features(20)
 
 
