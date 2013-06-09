@@ -9,8 +9,10 @@ from nltk import bigrams
 import numpy as np
 from sklearn.feature_selection import SelectKBest, chi2
 from itertools import izip_longest
+import pickle
 
 #izdvajamo rijeci koje se pojavljuju u dokumentu u svrhu odabira featura
+#poziva se unutar funkcije feature_selection
 def words_for_feature_selection(document):
     features = []
     bigram = []
@@ -31,15 +33,18 @@ def document_features(document):
     document.extend(document_bigram)
     features = {}
     for word in word_features:
-        features[word] = (word in document)
+        if(word in document):
+            features[word] = (word in document)
     return features
 
+#izbacuje stop words iz danog skupa rijeci(all_words)
 def izbaci_stop_words(all_words):
     stopwords = nltk.corpus.stopwords.words('english')
     all_words = [w for w in all_words if w not in stopwords]
     return all_words
     
 #razdvaja rijeci po apostrofu i uzima samo dio rijeci prije apostrofa
+#korisno npr za rijec I'm
 def stem(word):
     l=word.split("'")
     return l[0]
@@ -73,6 +78,8 @@ def sinonimi(documents,word_features,dg,gg):
 
 #vracamo rijeci sortirane po omjeru pojavljivanja u subjektivnim i objektivnim recenicama
 #preferiramo rijeci s najmanjim omjerom
+#ako se neka rijec javlja samo u jednoj klasi,definiramo da je njen omjer 0
+#i smatramo ju korisnom
 def omjer_pojavljivanja(documents,dg1,gg1,dg2,gg2):
     mapobj={}
     mapsubj={}
@@ -173,44 +180,57 @@ def bigrami(documents):
 
 #parametri:
     #koliko - koliko najinformativnijih featura zelimo izdvojiti
-    #bigrami = 0,radimo s rijecima,bigrami = 1 radimo s bigramima
-    #funkcija na osnovu chi2 testa odabiremo najinformativnije feature
-def feature_selection(documents,koliko):
+    #funkcija na osnovu chi2 testa odabire najinformativnije feature
+def feature_selection(documents,koliko,dg1,gg1,dg2,gg2):
     selector = SelectKBest(chi2, koliko)
-    y = [c for (d,c) in documents][:7000]
+    y = []
     X = []
-    for (d,c) in documents[:7000]:
-        X.append(words_for_feature_selection(d))
+    for i in range (dg1,gg1):
+        y.append(documents[i][1])
+        X.append(words_for_feature_selection(documents[i][0]))
+    for i in range (dg2,gg2):
+        y.append(documents[i][1])
+        X.append(words_for_feature_selection(documents[i][0]))
     selector.fit(X,y)
     m = selector.get_support()
     return [i[0] for i in izip_longest(word_features1, m[:len(X)], fillvalue=True) if i[1]]
 
-#POCETAK KODA
+#-----main funkcija-----#
 obj=[]
 subj=[]
 documents = ucitavanje(obj,subj)
-rez = open("rezultati.txt",'a+b')
+#all_bigrams = bigrami(documents)
+#-----4-struka cross validacija-----#
 for i in range(4):
     word_features1 = []
-    word_features1 = omjer_pojavljivanja(documents,0,i*2500,(i+1)*2500,10000)[:2000]
-    #all_bigrams = bigrami(documents)
-    #all_words = izbaci_stop_words(all_words)
-    #all_words = [stem(word) for word in all_words]
+    print "izdvajam..."
+    word_features1 = najveca_frekvencija(obj,subj,0,i*2500,(i+1)*2500,10000)[:10000]
+    #word_features1 = otkloni_nepozeljne(word_features1,2000)
+    #word_features1 = [stem(word) for word in word_features1]
     #word_features1 = omjer_pojavljivanja(documents,0,7000)[:2000]
-    #word_features1.extend(all_bigrams[:100])
+    #word_features1.extend(all_bigrams[:5000])
+    if(i == 0):
+        k = open("sve_rijeci.txt","wb")
+        pickle.dump(word_features1,k)
+        k.close()
     word_features = []
-    #word_features1 = all_words
-    #word_features = feature_selection(documents,2000)
-    word_features = word_features1
+    print "feature selection..."
+    word_features = feature_selection(documents,2000,0,i*2500,(i+1)*2500,10000)
+    if(i == 0):
+        k = open("odabrane_rijeci.txt","wb")
+        pickle.dump(word_features,k)
+        k.close()
+    #word_features = word_features1
     #sinonimi(documents,word_features,7000,10000)
     featuresets = []
     train_set = []
     test_set = []
+    print "odabir trening i testing seta..."
     featuresets = [(document_features(d),c) for (d,c) in documents]
     train_set = featuresets[:i*2500] + featuresets[(i + 1)*2500:]
     test_set = featuresets[i*2500:(i+1)*2500]
+    print "treniram..."
     classifier = nltk.NaiveBayesClassifier.train(train_set)
+    print "testiram..."
     tocnost = nltk.classify.accuracy(classifier, test_set)
     print tocnost
-    rez.write(str(tocnost) + " ")
-rez.close()
