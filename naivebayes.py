@@ -8,29 +8,55 @@ from nltk.corpus import stopwords
 from nltk import bigrams
 import numpy as np
 from sklearn.feature_selection import SelectKBest, chi2
-from itertools import izip_longest
+import itertools
 import pickle
+import sys
+
+#-----PARAMETRI KOJE JE MOGUCE PODESITI-----#
+
+#zelite li koristiti i bigrame
+KORISTENJE_BIGRAMA = 0
+#odabirom najveca frekvencija = 0, koristi se omjer_pojavljivanja
+NAJVECA_FREKVENCIJA = 1
+#koristenje otkloni nepozeljne
+OTKLONI_NEPOZELJNE = 0
+#koristenje stem-a
+STEM = 0
+#koristenje izbaci stop words
+STOP = 0
+#koristenje k-struke cross validacije
+K = 4
+#koristenje feature selectiona
+FEATURE_SELECTION = 0
+#koristenje sinonima kod pripreme test seta
+SINONIMI = 0
+#broj faetura
+BROJ_FEATURA = 2000
+
+#--------------------------------------------#
 
 #izdvajamo rijeci koje se pojavljuju u dokumentu u svrhu odabira featura
 #poziva se unutar funkcije feature_selection
 def words_for_feature_selection(document):
     features = []
-    bigram = []
-    bigram.append([w for w in bigrams(document)])
-    document_bigram=[]
-    [document_bigram.extend(w) for w in bigram]
-    document.extend(document_bigram)
+    if(KORISTENJE_BIGRAMA == 1):
+        bigram = []
+        bigram.append([w for w in bigrams(document)])
+        document_bigram=[]
+        [document_bigram.extend(w) for w in bigram]
+        document.extend(document_bigram)
     for word in word_features1:
         features.append(document.count(word))
     return features
 
 #vraca feature u dokumentu
 def document_features(document):
-    bigram = []
-    bigram.append([w for w in bigrams(document)])
-    document_bigram=[]
-    [document_bigram.extend(w) for w in bigram]
-    document.extend(document_bigram)
+    if(KORISTENJE_BIGRAMA == 1):
+        bigram = []
+        bigram.append([w for w in bigrams(document)])
+        document_bigram=[]
+        [document_bigram.extend(w) for w in bigram]
+        document.extend(document_bigram)
     features = {}
     for word in word_features:
         if(word in document):
@@ -67,14 +93,14 @@ def sinonimi(documents,word_features,dg,gg):
         ex = documents[i]
         index = 0
         for word in ex[0]:
-            if(word not in word_features):
+            if(word not in word_features and type(word) != tuple):
                 if(len(wn.synsets(word)) != 0):
                     x = wn.synsets(word)[0].lemma_names
                     r = [i for i in x if i in word_features]
                     if len(r):
                         ex[0][index] = r[0]
             index = index + 1
-    return test_set
+    return documents
 
 #vracamo rijeci sortirane po omjeru pojavljivanja u subjektivnim i objektivnim recenicama
 #preferiramo rijeci s najmanjim omjerom
@@ -138,7 +164,7 @@ def najveca_frekvencija(obj,subj,dg1,gg1,dg2,gg2):
 
 #otklanjanje nepozeljnih rijeci, argument koliko znaci koliko rijeci zelimo da funkcija vrati
 def otkloni_nepozeljne(all_words,koliko):
-    tagged_sent = nltk.pos_tag(all_words[:10000])
+    tagged_sent = nltk.pos_tag(all_words)
     simplified = [(word, simplify_wsj_tag(tag)) for word, tag in tagged_sent]
     useful_words = [t[0] for t in simplified if t[0] != '"' and (ok(t[1]) or t[0] == '--')]
     return useful_words[:koliko]
@@ -167,10 +193,12 @@ def ucitavanje(obj, subj):
     return documents
 
 #funkcija vraca bigrame koji se pojavljuju u recenicama
-def bigrami(documents):
+def bigrami(documents,dg1,gg1,dg2,gg2):
     bigram = []
     stopwords = nltk.corpus.stopwords.words('english')
-    for i in range(7000):
+    for i in range(dg1,gg1):
+        bigram.append([w for w in bigrams(documents[i][0])])
+    for i in range(dg2,gg2):
         bigram.append([w for w in bigrams(documents[i][0])])
     result = []
     [result.extend(w) for w in bigram]
@@ -191,44 +219,71 @@ def feature_selection(documents,koliko,dg1,gg1,dg2,gg2):
     for i in range (dg2,gg2):
         y.append(documents[i][1])
         X.append(words_for_feature_selection(documents[i][0]))
+    X = np.array(X)
+    y = np.array(y)
     selector.fit(X,y)
     m = selector.get_support()
-    return [i[0] for i in izip_longest(word_features1, m[:len(X)], fillvalue=True) if i[1]]
+    count = 0
+    for i in m:
+        if(i == True):
+            count = count + 1
+    print count
+    return list(itertools.compress(word_features1,m))
 
 #-----main funkcija-----#
 obj=[]
 subj=[]
 documents = ucitavanje(obj,subj)
-#all_bigrams = bigrami(documents)
-#-----4-struka cross validacija-----#
-for i in range(4):
+korak = 10000/K
+if(len(sys.argv) != 10):
+    print "Koristim parametre podesene u kodu"
+    print "Za promjenu ponovno pokrenuti program"
+    print "Unesti svih 9 argumenata komandne linije s vrijednostima 0 ili 1,osim K i BROJ_FEATURA sljedecim redosljedom"
+    print "KORISTENJE_BIGRAMA NAJVECA_FREKVENCIJA OTKLONI_NEPOZELJNE STEM STOP K FEATURE_SELECTION SINONIMI BROJ_FEATURA"
+else:
+   KORISTENJE_BIGRAMA = int(sys.argv[1])
+   NAJVECA_FREKVENCIJA = int(sys.argv[2])
+   OTKLONI_NEPOZELJNE = int(sys.argv[3])
+   STEM = int(sys.argv[4])
+   STOP = int(sys.argv[5])
+   K = int(sys.argv[6])
+   FEATURE_SELECTION = int(sys.argv[7])
+   SINONIMI = int(sys.argv[8])
+   BROJ_FEATURA = int(sys.argv[9])
+   
+
+#-----K-struka cross validacija-----#
+for cv in range(K):
     word_features1 = []
     print "izdvajam..."
-    word_features1 = najveca_frekvencija(obj,subj,0,i*2500,(i+1)*2500,10000)[:10000]
-    #word_features1 = otkloni_nepozeljne(word_features1,2000)
-    #word_features1 = [stem(word) for word in word_features1]
-    #word_features1 = omjer_pojavljivanja(documents,0,7000)[:2000]
-    #word_features1.extend(all_bigrams[:5000])
-    if(i == 0):
-        k = open("sve_rijeci.txt","wb")
-        pickle.dump(word_features1,k)
-        k.close()
-    word_features = []
-    print "feature selection..."
-    word_features = feature_selection(documents,2000,0,i*2500,(i+1)*2500,10000)
-    if(i == 0):
-        k = open("odabrane_rijeci.txt","wb")
-        pickle.dump(word_features,k)
-        k.close()
-    #word_features = word_features1
-    #sinonimi(documents,word_features,7000,10000)
-    featuresets = []
-    train_set = []
-    test_set = []
+    if(NAJVECA_FREKVENCIJA):
+        word_features1 = najveca_frekvencija(obj,subj,0,cv*korak,(cv+1)*korak,10000)
+    else:
+        word_features1 = omjer_pojavljivanja(documents,0,cv*korak,(cv+1)*korak,10000)
+    if(STEM):
+        word_features1 = [stem(word) for word in word_features1]
+    if(STOP):
+        word_features1 = izbaci_stop_words(word_features1)
+    if(OTKLONI_NEPOZELJNE):
+        word_features1 = otkloni_nepozeljne(word_features1,BROJ_FEATURA)
+    if(KORISTENJE_BIGRAMA):
+        all_bigrams = bigrami(documents,0,cv*korak,(cv+1)*korak,10000)
+        if(FEATURE_SELECTION):
+            word_features1.extend(all_bigrams[:5000])
+        else:
+            word_features1.extend(all_bigrams[:2000])
+    if(FEATURE_SELECTION):
+        print "feature selection..."
+        word_features = feature_selection(documents,BROJ_FEATURA,0,cv*korak,(cv+1)*korak,10000)
+    else:
+        word_features = word_features1[:BROJ_FEATURA]
+    if(SINONIMI):
+        print "sinonimi..."
+        documents = sinonimi(documents,word_features,cv*korak,(cv+1)*korak)
     print "odabir trening i testing seta..."
     featuresets = [(document_features(d),c) for (d,c) in documents]
-    train_set = featuresets[:i*2500] + featuresets[(i + 1)*2500:]
-    test_set = featuresets[i*2500:(i+1)*2500]
+    train_set = featuresets[:cv*korak] + featuresets[(cv+1)*korak:]
+    test_set = featuresets[cv*korak:(cv+1)*korak]
     print "treniram..."
     classifier = nltk.NaiveBayesClassifier.train(train_set)
     print "testiram..."
